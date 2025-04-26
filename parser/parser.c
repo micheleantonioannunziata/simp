@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "mymat.h"
+#include "../mymat/mymat.h"
 #include "parser.h"
 
 #define MAX 256

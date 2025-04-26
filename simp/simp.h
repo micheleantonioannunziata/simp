@@ -1,4 +1,4 @@
-#include "mymat.h"
+#include "../mymat/mymat.h"
 #include <stdio.h>
 
 typedef struct sp *simp;

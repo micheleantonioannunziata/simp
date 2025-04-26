@@ -1,6 +1,6 @@
-#include "simp.h"
-#include "parser.h"
-#include "mymat.h"
+#include "./simp.h"
+#include "../parser/parser.h"
+#include "../mymat/mymat.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
