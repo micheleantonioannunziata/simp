@@ -1,6 +1,8 @@
 # simp
 
-Il progetto **simp** è una banale implementazione del **metodo del simplesso**. Tale algoritmo consente di risolvere all'ottimo problemi di programmazione matematica lineare purché siano in forma standard di minimo e purché sia data in input una base ammissibile.
+Il progetto **simp** è una banale implementazione in linguaggio C del **metodo del simplesso**. Tale algoritmo consente di risolvere all'ottimo problemi di programmazione matematica lineare purché siano in forma standard di minimo e purché sia data in input una base ammissibile. 
+
+La soluzione proposta si basa su una serie di ipotesi fondamentali: la matrice dei coefficienti tecnologici deve essere a rango pieno, ovvero il numero di vincoli deve essere strettamente inferiore al numero di variabili; la funzione obiettivo deve essere convessa; inoltre, il problema deve essere fornito in uno specifico formato descritto di seguito.
 
 ## Moduli
 
@@ -70,16 +72,16 @@ In questo esempio:
   ```
 - Le variabili in base sono **x2, x3, e x4**.
 
-### Dettagli del Formato
+### Dettagli formato
 
 - Le variabili sono indicate con `x1`, `x2`, ecc., e devono essere numerate consecutivamente a partire da 1.
 - Le espressioni della funzione obiettivo e dei vincoli devono essere espresse in forma lineare.
 - Gli operatori `+` e `-` devono essere preceduti da uno spazio.
 - Le variabili in base sono identificate dalla lista di indici fornita nell'ultima riga.
 
-## Come Utilizzare il Programma
+## Utilizzo
 
-1. **Compilazione del Progetto**:
+1. **Compilazione progetto**:
    Per compilare il progetto, basta utilizzare il comando `make` nella directory del progetto:
    ```bash
    make
@@ -87,4 +89,4 @@ In questo esempio:
 
 2. **Preparazione file input**: Crea il file `prob.txt` nel formato descritto sopra.
 
-3. **Esecuzione del Programma**: Una volta compilato il progetto e preparato il file di input, è possibile eseguire il programma con il comando `./simp`.
+3. **Esecuzione programma**: Una volta compilato il progetto e preparato il file di input, è possibile eseguire il programma con il comando `./simp`.
