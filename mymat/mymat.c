@@ -34,6 +34,19 @@ matrix alloc_matrix(const int rows, const int columns) {
   return m;
 }
 
+// restituisce una matrice copia
+matrix get_copy_matrix(matrix m) {
+  const int rows = get_rows(m), cols = get_columns(m);
+  matrix res = alloc_matrix(rows, cols);
+
+  int i, j;
+  for (i = 1; i <= rows; i++)
+    for (j = 1; j <= cols; j++)
+      set_matrix_element(res, i, j, get_matrix_element(m, i, j));
+
+  return res;
+}
+
 // num_righe
 const int get_rows(matrix m) {  return m->rows; }
 // num_colonne
@@ -519,6 +532,110 @@ matrix horizontal_concatenation(matrix m1, matrix m2) {
 
   return res;
 }
+
+// verifica se il vettore colonna è una colonna dell'identità
+// restituisce l'indice della colonna dell'identità corrispondente,
+// altrimenti -1
+int verify_identity_column(matrix column) {
+  const int num_rows = get_rows(column), num_columns = get_columns(column);
+
+  // verifica vettore colonna
+  if (num_columns != 1) {
+    fprintf(stderr, "error: column vector has %d columns\n", num_columns);
+    exit(EXIT_FAILURE);
+  }
+
+  // conta il numero di 1 e controlla che tutti gli altri elementi siano 0
+  int ones_count = 0, one_position = -1, i;
+  float value;
+
+  for (i = 1; i <= num_rows; i++) {
+    value = get_matrix_element(column, i, 1);
+
+    if (value == 1.0) {
+      ones_count++;
+      one_position = i;
+    }
+
+    // valore diversa da 0 e 1
+    else if (value != 0.0)  return -1;
+  }
+
+  // Una colonna dell'identità ha esattamente un elemento pari a 1
+  if (ones_count == 1)
+    return one_position;
+
+  return -1;
+}
+
+// restituisce le colonne dell'identità presenti in m
+// num_founded_columns: numero di colonne trovate
+int* find_identity_columns(matrix m, int *num_founded_columns) {
+  const int num_rows = get_rows(m), num_cols = get_columns(m);
+  int j, identity_index;
+  int *identity_columns = NULL;
+  matrix current_column;
+
+  // contatore colonne trovate
+  *num_founded_columns = 0;
+
+  // array temporaneo per memorizzare gli indici delle colonne trovate
+  int *identity_temp_columns;
+  if (!(identity_temp_columns = (int*) calloc(num_cols, sizeof(int)))) {
+    fprintf(stderr, "bad allocation\n");
+    exit(EXIT_FAILURE);
+  }
+
+  // array per tenere traccia delle colonne dell'identità già trovate
+  int *used;
+  if (!(used = (int*) calloc(num_rows + 1, sizeof(int)))) {
+    free(identity_temp_columns);
+    fprintf(stderr, "bad allocation failed\n");
+    exit(EXIT_FAILURE);
+  }
+
+  // per ogni colonna
+  for (j = 1; j <= num_cols; j++) {
+    current_column = get_column(m, j);
+
+    // verifica se è una colonna dell'identità e quale
+    identity_index = verify_identity_column(current_column);
+
+    // se è una colonna di identità e non è già stata trovata
+    if (identity_index != -1 && !used[identity_index]) {
+      // salva l'indice della colonna nella matrice originale
+      identity_temp_columns[*num_founded_columns] = j;
+
+      // segna come usata
+      used[identity_index] = 1;
+
+      (*num_founded_columns)++;
+    }
+
+    destroy_matrix(current_column);
+  }
+
+  // alloca lo spazio per l'array finale se c'è almeno una colonna trovata
+  if (*num_founded_columns > 0) {
+    if (!(identity_columns = (int*) calloc(*num_founded_columns, sizeof(int)))) {
+      free(identity_temp_columns);
+      free(used);
+      fprintf(stderr, "bad allocation\n");
+      exit(EXIT_FAILURE);
+    }
+
+    // copia risultati
+    for (j = 0; j < *num_founded_columns; j++)
+      identity_columns[j] = identity_temp_columns[j];
+  }
+
+  // Libera la memoria degli array temporanei
+  free(identity_temp_columns);
+  free(used);
+
+  return identity_columns;
+}
+
 
 // deallocazione
 void destroy_matrix(matrix m) {

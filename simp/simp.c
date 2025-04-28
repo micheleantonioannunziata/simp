@@ -13,6 +13,10 @@ struct sp {
   matrix cost_coeffs_base; // vettore dei coefficienti di costo in base (m, 1)
 
   int *base_indices, *out_base_indices; // indici delle variabili in base (m), indici delle variabili fuori base (n - m)
+
+  // vettore degli indici delle colonne dell'identità presenti nella matrice dei coefficienti tecnologici
+  int *identity_columns_in_tech_coeffs, num_identity_columns_in_tech_coeffs;
+
   matrix base; // matrice di base (m, m)
 
   matrix x_base_value; // vettore delle variabili in base
@@ -30,6 +34,7 @@ simp catch_problem(FILE *f) {
   // alloca e controlla
   if (!(s = calloc(1, sizeof(struct sp)))) {
     perror("bad allocation");
+    fclose(f);
     exit(EXIT_FAILURE);
   }
 
@@ -39,6 +44,9 @@ simp catch_problem(FILE *f) {
   // cattura info dal file utilizzando il parser
   s->num_variables = parse_num_variables(f);
   s->tech_coeffs = parse_tech_coeffs(f);
+
+  s->identity_columns_in_tech_coeffs = find_identity_columns_in_tech_coeffs(s);
+
   s->num_constraints = get_rows_tech_coeffs(s);
   s->cost_coeffs = parse_cost_coeffs(f);
   s->known_terms = parse_known_terms(f);
@@ -51,39 +59,17 @@ simp catch_problem(FILE *f) {
     exit(EXIT_FAILURE);
   }
 
-  // parsing base
-  s->base_indices = parse_base_indices(f);
-
-  // verifica congruenza indici di base
-  verify_base_indices(s);
-
-  // costruisci matrice di base
-  s->base = build_base_by_indices(s);
-
-  // verifica invertibilità
-  if (determinant(get_base(s)) == .0) {
-    fprintf(stderr, "error: base not invertible");
-    clean_all(s);
-    exit(EXIT_FAILURE);
-  }
-
-  // costruisci indici fuori base
-  s->out_base_indices = build_out_base_indices(s);
-
-  // costruisci coefficienti di costo in base
-  s->cost_coeffs_base = build_cost_coeffs_base(s);
-
-  // calcola valore funzione obiettivo
-  s->z_value = build_z_value_by_base(s);
-
-  // calcola soluzione ottima di base
-  s->x_base_value = build_x_base_value(s);
+  s->base_indices = NULL;
+  s->out_base_indices = NULL;
+  s->base = NULL;
+  s->cost_coeffs_base = NULL;
+  s->x_base_value = NULL;
 
   return s;
 }
 
 int optimality_test(simp s, int *entering_index) {
-  // num_variabili - num_vincoli variabili fuori base
+  // num_variabili_fuori_base = num_variabili - num_vincoli
   int *out_base_indices = get_out_base_indices(s),
     num_out_base = get_num_variables(s) - get_num_constraints(s),
     best_index = -1, i, var_index;
@@ -120,7 +106,6 @@ float unboundedness_test(simp s, const int index, int *exiting_index) {
   if (index <= 0 || index > get_num_variables(s)) {
       fprintf(stderr, "error: index %d out of bound in problem composed by %d variables",
               index, get_num_variables(s));
-      clean_all(s);
       exit(EXIT_FAILURE);
   }
 
@@ -128,7 +113,6 @@ float unboundedness_test(simp s, const int index, int *exiting_index) {
   if (is_in_base(s, index)) {
       fprintf(stderr, "error: cannot calculate reduced cost coeff for index %d in base", index);
       print_base(s);
-      clean_all(s);
       exit(EXIT_FAILURE);
   }
 
@@ -161,7 +145,6 @@ float unboundedness_test(simp s, const int index, int *exiting_index) {
   // ottimo illimitato, tutti i rapporti minimi sono <= 0
   if (min_index == -1) {
       fprintf(stderr, "unbounded optimum\n");
-      print_matrix(y_index);
       clean_all(s);
       exit(EXIT_FAILURE);
   }
@@ -218,6 +201,214 @@ float get_reduced_cost_coeff_by_index(simp s, const int index) {
   return res;
 }
 
+// risoluzione problema con metodo delle due fasi
+void solve_problem(simp s) {
+  int i, *identity_columns_in_tech_coeffs = get_identity_columns_in_tech_coeffs(s);
+
+  const int num_identity_columns_in_tech_coeffs = get_num_identity_columns_in_tech_coeffs(s),
+    num_constraints = get_num_constraints(s), num_variables = get_num_variables(s);
+
+  matrix original_tech_coeffs = get_copy_matrix(get_tech_coeffs(s));
+
+  // se nella matrice dei coefficienti tecnologici c'è l'identità,
+  // parti da quella come base
+  if (num_identity_columns_in_tech_coeffs == num_constraints) {
+    printf("\nin tech coeffs index there is already identity matrix (%d x %d), so let's start from it\n",
+      num_constraints, num_constraints);
+
+    // indici di base
+    for (i = 1; i <= num_constraints; i++)
+      set_base_index(s, i, identity_columns_in_tech_coeffs[i - 1]);
+
+    print_base_indices(s);
+  }
+  else {
+    printf("\nin tech coeffs index there is NOT identity matrix (%d x %d), so let's do two phases method\n",
+      num_constraints, num_constraints);
+    // metodo delle due fasi
+    int *base_indices = first_phase(s), second_phase = 1;
+
+    // verifica se c'è una variabile artificiale in base
+    for (i = 0; i < num_constraints; i++)
+      if (base_indices[i] > num_variables) {
+        printf("\nin the optimal base solution of the artificial problem there is at least one artifial variable (x%d),\nso the original problem is ineligible\n",
+          base_indices[i]);
+        return;
+      }
+
+    // seconda fase
+    if (!(s->base_indices = (int*) calloc(num_constraints, sizeof(int)))) {
+      perror("bad allocation\n");
+      free(base_indices);
+      clean_all(s);
+      exit(EXIT_FAILURE);
+    }
+
+    for (i = 1; i <= num_constraints; i++)
+      set_base_index(s, i, base_indices[i - 1]);
+
+    clean_ptr((void**) &s->tech_coeffs);
+    s->tech_coeffs = original_tech_coeffs;
+
+    printf("\nstarting second phase\n");
+  }
+
+  // ricostruisci tutto
+  clean_base_related_except_base_indices(s);
+  s->base = build_base_by_indices(s);
+  s->out_base_indices = build_out_base_indices(s);
+  s->cost_coeffs_base = build_cost_coeffs_base(s);
+  s->x_base_value = build_x_base_value(s);
+  s->z_value = build_z_value_by_base(s);
+
+  solve_simplex(s);
+
+  print_x_base_value(s);
+  print_z_value(s);
+}
+
+int* first_phase(simp s) {
+  simp art = get_copy_simp(s);
+
+  const int num_constraints = get_num_constraints(art),
+    num_variable_original_problem = get_num_variables(art),
+    num_identity_columns_in_tech_coeffs = get_num_identity_columns_in_tech_coeffs(art);
+
+  int i, k, *identity_columns_in_tech_coeffs = get_identity_columns_in_tech_coeffs(art);
+
+  // al problema artificiale si aggiungono variabili per ottenere
+  // la matrice identità
+  const int num_variable_artificial_problem = num_variable_original_problem +
+     (num_constraints - num_identity_columns_in_tech_coeffs);
+  art->num_variables = num_variable_artificial_problem;
+
+  // allocazione coefficienti di costo
+  clean_ptr((void**) &art->tech_coeffs);
+  art->cost_coeffs = alloc_matrix(num_variable_artificial_problem, 1);
+
+  // coefficienti di costo delle variabili del problema originale nulli
+  for (i = 1; i <= num_variable_artificial_problem; i++)
+    if (i <= num_variable_original_problem)
+      set_matrix_element(get_cost_coeffs(art), i, 1, 0);
+    // coefficienti di costo delle variabili artificiali pari ad 1
+    else  set_matrix_element(get_cost_coeffs(art), i, 1, 1);
+
+  // allocazione matrice dei coefficienti tecnologici
+  clean_ptr((void**) &art->tech_coeffs);
+
+  // array per tenere traccia di quali colonne dell'identità sono già presenti
+  int* identity_positions;
+  if (!(identity_positions = (int*) calloc(num_constraints + 1, sizeof(int)))) {
+    fprintf(stderr, "bad allocation\n");
+    free(identity_columns_in_tech_coeffs);
+    clean_all(s);
+    clean_all(art);
+    exit(EXIT_FAILURE);
+  }
+
+  // marca posizioni delle colonne dell'identità già presenti
+  matrix current_column;
+  int position;
+
+  for (i = 0; i < num_identity_columns_in_tech_coeffs; i++) {
+    current_column = get_column(get_tech_coeffs(s), identity_columns_in_tech_coeffs[i]);
+    position = verify_identity_column(current_column);
+    identity_positions[position] = 1;  // segna posizione come già presente
+    destroy_matrix(current_column);
+  }
+
+  // ora identity_positions[i] == 1 indica che la i-esima colonna
+  // dell'identità è già presente
+
+  // crea la matrice dei coefficienti tecnologici per il problema artificiale
+  // prima copia la matrice originale
+  matrix artificial_tech_coeffs = get_copy_matrix(get_tech_coeffs(s));
+
+  // identifica le colonne dell'identità che mancano
+  // e crea le relative colonne artificiali
+  matrix identity_matrix = identity(num_constraints), id_current_column, temp;
+  matrix missing_columns = NULL;
+  int num_missing_columns = 0;
+
+  // per ogni possibile colonna dell'identità
+  for (i = 1; i <= num_constraints; i++)
+    // se non presente
+    if (!identity_positions[i]) {
+      id_current_column = get_column(identity_matrix, i);
+
+      if (missing_columns == NULL)  missing_columns = id_current_column;
+      else {
+        matrix temp = horizontal_concatenation(missing_columns, id_current_column);
+        destroy_matrix(id_current_column);
+        destroy_matrix(missing_columns);
+        missing_columns = temp;
+      }
+
+      printf("identity column %d added to tech coeffs matrix\n", i);
+      num_missing_columns++;
+    }
+
+  // concatena la matrice dei coefficienti tecnologici con le colonne mancanti dell'identità
+  if (missing_columns != NULL) {
+    art->tech_coeffs = horizontal_concatenation(artificial_tech_coeffs, missing_columns);
+    destroy_matrix(artificial_tech_coeffs);
+    destroy_matrix(missing_columns);
+  } else  art->tech_coeffs = artificial_tech_coeffs;
+
+  destroy_matrix(identity_matrix);
+  free(identity_positions);
+
+  // indici di base - indici variabili artificiali
+  k = 1;
+
+  if (!(art->base_indices = (int*) calloc(num_constraints, sizeof(int)))) {
+    perror("bad allocation\n");
+    clean_all(art);
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+
+  // indici delle colonne dell'identità iniziali
+  for (i = 1; i <= num_identity_columns_in_tech_coeffs; i++)
+    set_base_index(art, k++, identity_columns_in_tech_coeffs[i - 1]);
+
+  // più le variabili artificiali
+  for (i = num_variable_original_problem + 1; i <= num_variable_artificial_problem; i++)
+    set_base_index(art, k++, i);
+
+  clean_base_related_except_base_indices(art);
+  art->base = build_base_by_indices(art);
+  art->out_base_indices = build_out_base_indices(art);
+
+  art->cost_coeffs_base = alloc_matrix(num_constraints, 1);
+  // coefficienti di costo in base pari a 1
+  initizialize_matrix(get_cost_coeffs_base(art), 1);
+
+  art->x_base_value = build_x_base_value(art);
+  art->z_value = build_z_value_by_base(art);
+
+  printf("\nstarting first phase\n");
+  print_general_info(art);
+
+  solve_simplex(art);
+
+  int *base_optimal_indices_copy;
+
+  if (!(base_optimal_indices_copy =  calloc(num_constraints, sizeof(int)))) {
+    perror("bad allocation\n");
+    clean_all(art);
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+
+  for (i = 1; i <= num_constraints; i++)
+    base_optimal_indices_copy[i - 1] = get_base_index(art, i);
+
+  clean_all(art);
+
+  return base_optimal_indices_copy;
+}
+
 // algoritmo del simplesso
 void solve_simplex(simp s) {
   int entering_index, exiting_index, iteration = 0;
@@ -227,8 +418,9 @@ void solve_simplex(simp s) {
     printf("\n\n---------------------------------------------------------------\n\n");
     printf("\niteration num. %d\n", ++iteration);
 
-    // stampa info generali
-    print_general_info(s);
+    print_solution_info(s);
+
+    print_base_indices(s);
 
     // test di ottimalità
     if (optimality_test(s, &entering_index)) {
@@ -249,7 +441,75 @@ void solve_simplex(simp s) {
   }
 }
 
+// restituisce il vettore degli indici delle colonne dell'identità
+// presente nella matrice dei coefficienti tecnologici
+int* find_identity_columns_in_tech_coeffs(simp s) {
+  return find_identity_columns(get_tech_coeffs(s), &s->num_identity_columns_in_tech_coeffs);
+}
+
 // getters
+simp get_copy_simp(simp s) {
+  simp res;
+
+  int i, num_constraints = get_num_constraints(s),
+    num_variables = get_num_variables(s);
+
+  if (!(res = calloc(1, sizeof(struct sp)))) {
+    perror("bad allocation\n");
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+
+  res->num_variables = num_variables;
+  res->num_constraints = num_constraints;
+
+  if (s->cost_coeffs)   res->cost_coeffs = get_copy_matrix(get_cost_coeffs(s));
+  if (s->tech_coeffs)   res->tech_coeffs = get_copy_matrix(get_tech_coeffs(s));
+  if (s->base)          res->base = get_copy_matrix(get_base(s));
+  if (s->x_base_value)  res->x_base_value = get_copy_matrix(get_x_base_value(s));
+  if (s->known_terms)   res->known_terms = get_copy_matrix(get_known_terms(s));
+  res->z_value = get_z_value(s);
+
+  if (s->base_indices) {
+    if (!(res->base_indices = (int*) calloc(num_constraints, sizeof(int)))) {
+      perror("bad allocation\n");
+      clean_all(s);
+      exit(EXIT_FAILURE);
+    }
+    for (i = 1; i <= num_constraints; i++)
+      set_base_index(res, i, get_base_index(s, i));
+  }
+
+  if (s->out_base_indices) {
+    if (!(res->out_base_indices = (int*) calloc(num_variables - num_constraints, sizeof(int)))) {
+      perror("bad allocation\n");
+      clean_all(s);
+      exit(EXIT_FAILURE);
+    }
+
+    for (i = 1; i <= num_variables - num_constraints; i++)
+      set_out_base_index(res, i, get_out_base_index(s, i));
+  }
+
+  if (s->base)              res->base = get_base(s);
+  if (s->cost_coeffs_base)  res->cost_coeffs_base = get_cost_coeffs(res);
+
+  res->num_identity_columns_in_tech_coeffs = get_num_identity_columns_in_tech_coeffs(s);
+
+  if (s->identity_columns_in_tech_coeffs) {
+    if (!(res->identity_columns_in_tech_coeffs = (int*) calloc(get_num_identity_columns_in_tech_coeffs(res), sizeof(int)))) {
+      perror("bad allocation\n");
+      clean_all(s);
+      exit(EXIT_FAILURE);
+    }
+
+    for (i = 0; i < get_num_identity_columns_in_tech_coeffs(res); i++)
+    res->identity_columns_in_tech_coeffs[i] = s->identity_columns_in_tech_coeffs[i];
+  }
+
+  return res;
+}
+
 const int get_num_variables(simp s) { return s->num_variables; }
 const int get_num_constraints(simp s) { return s->num_constraints; }
 matrix get_known_terms(simp s) { return s->known_terms; }
@@ -259,6 +519,8 @@ const int get_rows_tech_coeffs(simp s) { return get_rows(s->tech_coeffs); }
 const int get_columns_tech_coeffs(simp s) { return get_columns(s->tech_coeffs); }
 int* get_base_indices(simp s) { return s->base_indices; }
 int* get_out_base_indices(simp s) { return s->out_base_indices; }
+int* get_identity_columns_in_tech_coeffs(simp s) { return s->identity_columns_in_tech_coeffs; }
+int get_num_identity_columns_in_tech_coeffs(simp s) { return s->num_identity_columns_in_tech_coeffs; }
 matrix get_base(simp s) { return s->base; }
 matrix get_cost_coeffs_base(simp s) { return s->cost_coeffs_base; }
 matrix get_x_base_value(simp s) { return s->x_base_value; }
@@ -275,7 +537,8 @@ const int get_base_index(simp s, const int i) {
 
 void set_base_index(simp s, const int i, const int value) {
   if (i <= 0 || i > get_num_constraints(s)) {
-    fprintf(stderr, "error getting base index %d of a problem with %d constraints", i, get_num_constraints(s));
+    fprintf(stderr, "error setting base index %d to value %d of a problem with %d constraints",
+      i, value, get_num_constraints(s));
     clean_all(s);
     exit(EXIT_FAILURE);
   }
@@ -293,7 +556,20 @@ const int get_out_base_index(simp s, const int i) {
   return s->out_base_indices[i - 1];
 }
 
+void set_out_base_index(simp s, const int i, const int value) {
+  int num_variables = get_num_variables(s), num_constraints = get_num_constraints(s);
+  if (i <= 0 || i > num_variables - num_constraints) {
+    fprintf(stderr, "error setting out base index %d to value %d of a problem with %d variables and %d constraints",
+      i, value, num_variables, num_constraints);
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+  s->out_base_indices[i - 1] = value;
+}
+
 void print_general_info(simp s) {
+  printf("\n\n---------------------------------------------------------------\n\n");
+  printf("general info of the problem");
   print_num_variables(s);
   print_num_constraints(s);
   print_cost_coeffs(s);
@@ -304,6 +580,7 @@ void print_general_info(simp s) {
   print_base(s);
   print_cost_coeffs_base(s);
   print_solution_info(s);
+  printf("\n\n---------------------------------------------------------------\n\n");
 }
 
 void print_num_variables(simp s) {
@@ -336,6 +613,18 @@ void print_base_indices(simp s) {
     set_matrix_element(m, 1, j, get_base_index(s, j));
 
   print_matrix_by_info(m, "base indices");
+  destroy_matrix(m);
+}
+
+void print_identity_columns_in_tech_coeffs(simp s) {
+  int num_cols = get_num_identity_columns_in_tech_coeffs(s), j;
+  matrix m = alloc_matrix(1, num_cols);
+
+
+  for (j = 1; j <= num_cols; j++)
+    set_matrix_element(m, 1, j, s->identity_columns_in_tech_coeffs[j - 1]);
+
+  print_matrix_by_info(m, "identity columns in tech coeffs");
   destroy_matrix(m);
 }
 
@@ -478,14 +767,15 @@ matrix build_cost_coeffs_base(simp s) {
   // si aggiunge a res solo i coefficienti di costo delle variabili
   // i cui indici sono presenti nel vettore degli indici di base
   for (i = 1; i <= num_constraints; i++) {
-    base_var = get_base_index(s, i);
-    if (base_var <= 0 || base_var > get_rows(cost_coeffs)) {
-      fprintf(stderr, "error: invalid base variable index x%d\n", base_var);
-      clean_all(s);
-      exit(EXIT_FAILURE);
-    }
-    coeff = get_matrix_element(cost_coeffs, base_var, 1);
-    set_matrix_element(res, i, 1, coeff);
+      base_var = get_base_index(s, i);
+      if (base_var <= 0 || base_var > get_rows(cost_coeffs)) {
+          fprintf(stderr, "error: invalid base variable index x%d\n", base_var);
+          clean_all(s);
+          destroy_matrix(res);
+          exit(EXIT_FAILURE);
+      }
+      coeff = get_matrix_element(cost_coeffs, base_var, 1);
+      set_matrix_element(res, i, 1, coeff);
   }
 
   return res;
@@ -500,7 +790,10 @@ float build_z_value_by_base(simp s) {
 
   float res = get_matrix_element(res_matrix, 1, 1);
 
-  free(cbt); free(base_inv); free(tmp); free(res_matrix);
+  destroy_matrix(cbt);
+  destroy_matrix(base_inv);
+  destroy_matrix(tmp);
+  destroy_matrix(res_matrix);
 
   return res;
 }
@@ -510,15 +803,14 @@ matrix build_x_base_value(simp s) {
   matrix base_inv = inverse(get_base(s));
   matrix res = row_by_column_multiplication(base_inv, get_known_terms(s));
 
-  free(base_inv);
+  destroy_matrix(base_inv);
 
-  // controlla ammissibilità
   if (has_negative_component(res)) {
     fprintf(stderr, "base solution ineligible\n");
     print_base_indices(s);
-    print_matrix_by_info(res, "x base value");
-    free(res);
     clean_all(s);
+    destroy_matrix(base_inv);
+    destroy_matrix(res);
     exit(EXIT_FAILURE);
   }
 
@@ -552,6 +844,7 @@ void clean_all(simp s) {
   clean_ptr((void**) &s->cost_coeffs);
   clean_ptr((void**) &s->tech_coeffs);
   clean_ptr((void**) &s->known_terms);
+  clean_ptr((void**) &s->identity_columns_in_tech_coeffs);
   clean_base_related(s);
 
   free(s);

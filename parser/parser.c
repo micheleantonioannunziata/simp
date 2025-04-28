@@ -14,10 +14,6 @@ int parse_num_variables(FILE *f) {
 
   // per ogni riga letta
   while (fgets(line, sizeof(line), f)) {
-    // interrompi quando leggi la base
-    if (strstr(line, "B ="))
-      break;
-
     // leggi spazio per spazio
     token = strtok(line, " ");
     while (token != NULL) {
@@ -139,7 +135,7 @@ matrix parse_tech_coeffs(FILE *f) {
   char *token;
 
   // per ogni riga tranne quella della base
-  while (fgets(line, sizeof(line), f) && !strstr(line, "B =")) {
+  while (fgets(line, sizeof(line), f)) {
     token = strtok(line, " ");
 
     // scandisci spazio per spazio
@@ -178,12 +174,7 @@ const int parse_num_contraints(FILE *f, long *pos) {
   *pos = ftell(f); // posizione attuale
 
   // per ogni riga
-  while (fgets(line, sizeof(line), f)) {
-    // interrompi alla base
-    if (strstr(line, "B ="))  break;
-
-    num_constraints++;
-  }
+  while (fgets(line, sizeof(line), f))  num_constraints++;
 
   return num_constraints;
 }
@@ -202,7 +193,7 @@ matrix parse_known_terms(FILE *f) {
 
   float value;
   int row = 1;
-  while (fgets(line, sizeof(line), f) && !strstr(line, "B = ")) {
+  while (fgets(line, sizeof(line), f)) {
       if (sscanf(strrchr(line, '=') + 1, "%f", &value) == 1)
           set_matrix_element(res, row, 1, value);
       row++;
@@ -210,81 +201,3 @@ matrix parse_known_terms(FILE *f) {
 
   return res;
 }
-
-// indici di base
-int* parse_base_indices(FILE *f) {
-  rewind(f);
-  char line[MAX];
-
-  long pos;
-  int num_constraints = parse_num_contraints(f, &pos);
-
-  rewind(f);
-  int num_variables = parse_num_variables(f);
-
-  // una base è m x m (m = num vincoli)
-  int *res = calloc(num_constraints, sizeof(int)), count = 0;
-
-  fseek(f, pos, SEEK_SET);
-
-  char *start, *brace_open, *brace_close, *token;
-  int index;
-
-  while (fgets(line, sizeof(line), f)) {
-    // interrompi alla base
-    start = strstr(line, "B =");
-    if (start)  break;
-  }
-
-  // controlla '{'
-  brace_open = strchr(line, '{');
-  if (!brace_open) {
-    perror("error: missing '{' in base definition\n");
-    exit(EXIT_FAILURE);
-  }
-
-  // controlla '}'
-  brace_close = strchr(brace_open, '}');
-  if (!brace_close) {
-    perror("error: missing '}' in base definition\n");
-    exit(EXIT_FAILURE);
-  }
-
-  *brace_close = '\0'; // tronca
-
-  // scandisci indice per indice
-  token = strtok(brace_open + 1, ", ");
-  while (token) {
-    // controlla la dimnesione della base
-    if (count >= num_constraints) {
-        fprintf(stderr, "error: there is a base composed of more than %d elements but there are only %d constraints\n",
-                count, num_constraints);
-        free(res);
-        exit(EXIT_FAILURE);
-    }
-
-    // converti in intero
-    index = atoi(token);
-
-    // controlla indice
-    if (index <= 0 || index > num_variables) {
-        fprintf(stderr, "error: invalid base index '%s' in a problem composed by %d variables\n",
-           token, num_variables);
-        free(res);
-        exit(EXIT_FAILURE);
-    }
-
-    res[count++] = index;
-    token = strtok(NULL, ", ");
-  }
-
-  // controlla dimensione base
-  if (count != num_constraints) {
-    fprintf(stderr, "error: expected %d base indices but got %d\n", num_constraints, count);
-    free(res);
-    exit(EXIT_FAILURE);
-  }
-
-  return res;
-}
-

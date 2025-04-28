@@ -17,8 +17,5 @@ matrix parse_tech_coeffs(FILE*);
 // restituisce, leggendo dal file, il vettore colonna dei termini noti
 matrix parse_known_terms(FILE*);
 
-// restituisce, leggendo dal file, l'array avente gli indici delle variabili di base iniziali
-int* parse_base_indices(FILE*);
-
 // restituisce il numero di vincoli e imposta pos alla posizione iniziale del puntatore a file (dopo la funzione obiettivo)
 const int parse_num_contraints(FILE *f, long *pos) ;

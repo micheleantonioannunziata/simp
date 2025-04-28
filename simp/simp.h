@@ -34,6 +34,26 @@ void update_base(simp *s, const int entering_index, const int exiting_index);
 // algoritmo del simplesso
 void solve_simplex(simp s);
 
+// metodo delle due fasi
+void solve_problem(simp);
+
+// prima fase del metodo delle due fasi
+// costruisce e risolve il problema artificiale
+// restituisce il vettore degli indici delle variabili in base
+// della soluzione ottima di base
+int* first_phase(simp);
+
+// restituisce 1 se la matrice identità è presente nella matrice
+// dei coefficienti tecnologici, altrimenti 0
+int is_identity_in_tech_coeffs(simp);
+
+// restituisce il vettore degli indici delle colonne dell'identità
+// presente nella matrice dei coefficienti tecnologici
+int* find_identity_columns_in_tech_coeffs(simp);
+
+// restuituisce una copia
+simp get_copy_simp(simp);
+
 // restituisce il numero di variabili
 const int get_num_variables(simp);
 
@@ -67,14 +87,31 @@ const int get_columns_tech_coeffs(simp);
 // restituisce gli indici delle variabili in base
 int* get_base_indices(simp);
 
+// restituisce gli indici delle colonne dell'identità presenti 
+// nella matrice dei coefficienti tecnologici
+int* get_identity_columns_in_tech_coeffs(simp);
+
+// restituisce il numero di colonne dell'identità presenti 
+// nella matrice dei coefficienti tecnologici
+int get_num_identity_columns_in_tech_coeffs(simp);
+
 // restituisce l'i-esimo indice delle variabili in base
 const int get_base_index(simp s, const int i);
+
+// restituisce l'i-esimo indice delle variabili fuori base
+const int get_out_base_index(simp s, const int i);
 
 // imposta l'i-esimo indice delle variabili in base
 void set_base_index(simp s, const int i, const int value);
 
 // restituisce gli indici delle variabili fuori base
 int* get_out_base_indices(simp);
+
+// restituisce il valore ottimo
+float get_z_value(simp);
+
+// imposta l'i-esimo indice delle variabili fuori base
+void set_out_base_index(simp s, const int i, const int value);
 
 // verifica se x_index è in base
 int is_in_base(simp s, const int index);
@@ -94,6 +131,7 @@ void print_base(simp);
 void print_x_base_value(simp);
 void print_z_value(simp);
 void print_solution_info(simp);
+void print_identity_columns_in_tech_coeffs(simp);
 
 void verify_base_indices(simp);
 
@@ -121,6 +159,9 @@ void clean_base_related_except_base_indices(simp);
 
 // dealloca tutto ciò che concerne la base
 void clean_base_related(simp);
+
+// deallocazione generica
+void clean_ptr(void**);
 
 // deallocazione totale
 void clean_all(simp);

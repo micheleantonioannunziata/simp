@@ -4,6 +4,9 @@ typedef struct mt *matrix;
 // alloca una matrice m x n (m righe, n colonne)
 matrix alloc_matrix(const int m, const int n);
 
+// restituisce una matrice copia
+matrix get_copy_matrix(matrix);
+
 // restituisce il numero di righe della matrice
 const int get_rows(matrix m);
 
@@ -75,6 +78,17 @@ const int has_negative_component(matrix m);
 
 // concatena due matrici orizzontalmente
 matrix horizontal_concatenation(matrix a, matrix b);
+
+// verifica se il vettore colonna (m, 1) è una colonna
+// dell'identità (m, m)
+// restituisce l'indice della prima colonna in cui lo trova,
+// altrimenti -1
+int verify_identity_column(matrix column);
+
+// restituisce le colonne dell'identità presenti in m
+// scrive in num_foundend_columns la dimensione dell'array restituito,
+// ossia il numero di colonne diverse dell'identità trovate
+int* find_identity_columns(matrix m, int *num_founded_columns);
 
 // libera la memoria occupata dalla matrice
 void destroy_matrix(matrix m);
