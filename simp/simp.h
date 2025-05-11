@@ -95,6 +95,12 @@ int* get_identity_columns_in_tech_coeffs(simp);
 // nella matrice dei coefficienti tecnologici
 int get_num_identity_columns_in_tech_coeffs(simp);
 
+// restituisce l'i-esimo coefficiente di costo in base
+const int get_cost_coeffs_base_index(simp s, const int i);
+  
+// imposta l'i-esimo coefficiente di costo in base a value
+void set_cost_coeffs_base_index(simp s, const int i, const int value);
+
 // restituisce l'i-esimo indice delle variabili in base
 const int get_base_index(simp s, const int i);
 
@@ -109,6 +115,9 @@ int* get_out_base_indices(simp);
 
 // restituisce il valore ottimo
 float get_z_value(simp);
+
+// restituisce il vettore dei prezzi ombra (soluzione ottima duale)
+matrix get_shadow_prices(simp);
 
 // imposta l'i-esimo indice delle variabili fuori base
 void set_out_base_index(simp s, const int i, const int value);
@@ -129,6 +138,7 @@ void print_base_indices(simp);
 void print_out_base_indices(simp);
 void print_base(simp);
 void print_x_base_value(simp);
+void print_shadow_prices(simp);
 void print_z_value(simp);
 void print_solution_info(simp);
 void print_identity_columns_in_tech_coeffs(simp);
@@ -152,6 +162,11 @@ matrix build_x_base_value(simp);
 
 // restituisce il vettore dei coefficienti di costo in base
 matrix build_cost_coeffs_base(simp);
+
+// calcola il vettore dei prezzi ombra come prodotto
+// tra il vettore dei coefficienti di costo in base
+// e la matrice di base inversa
+matrix build_shadow_prices(simp);
 
 // dealloca tutto ciò che concerne la base 
 // al netto del vettore degli indici di base

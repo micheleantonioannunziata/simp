@@ -19,6 +19,7 @@ struct sp {
 
   matrix base; // matrice di base (m, m)
 
+  matrix shadow_prices; // prezzi ombra
   matrix x_base_value; // vettore delle variabili in base
   float z_value; // valore della funzione obiettivo
 };
@@ -64,6 +65,7 @@ simp catch_problem(FILE *f) {
   s->base = NULL;
   s->cost_coeffs_base = NULL;
   s->x_base_value = NULL;
+  s->shadow_prices = NULL;
 
   return s;
 }
@@ -210,6 +212,14 @@ void solve_problem(simp s) {
 
   matrix original_tech_coeffs = get_copy_matrix(get_tech_coeffs(s));
 
+  // alloca e controlla
+  if (!(s->base_indices = (int*) calloc(num_constraints, sizeof(int)))) {
+    perror("bad allocation\n");
+    destroy_matrix(original_tech_coeffs);
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+
   // se nella matrice dei coefficienti tecnologici c'è l'identità,
   // parti da quella come base
   if (num_identity_columns_in_tech_coeffs == num_constraints) {
@@ -221,8 +231,7 @@ void solve_problem(simp s) {
       set_base_index(s, i, identity_columns_in_tech_coeffs[i - 1]);
 
     print_base_indices(s);
-  }
-  else {
+  } else {
     printf("\nin tech coeffs index there is NOT identity matrix (%d x %d), so let's do two phases method\n",
       num_constraints, num_constraints);
     // metodo delle due fasi
@@ -235,14 +244,6 @@ void solve_problem(simp s) {
           base_indices[i]);
         return;
       }
-
-    // seconda fase
-    if (!(s->base_indices = (int*) calloc(num_constraints, sizeof(int)))) {
-      perror("bad allocation\n");
-      free(base_indices);
-      clean_all(s);
-      exit(EXIT_FAILURE);
-    }
 
     for (i = 1; i <= num_constraints; i++)
       set_base_index(s, i, base_indices[i - 1]);
@@ -263,8 +264,8 @@ void solve_problem(simp s) {
 
   solve_simplex(s);
 
-  print_x_base_value(s);
-  print_z_value(s);
+  s->shadow_prices = build_shadow_prices(s);
+  print_shadow_prices(s);
 }
 
 int* first_phase(simp s) {
@@ -381,8 +382,13 @@ int* first_phase(simp s) {
   art->out_base_indices = build_out_base_indices(art);
 
   art->cost_coeffs_base = alloc_matrix(num_constraints, 1);
-  // coefficienti di costo in base pari a 1
-  initizialize_matrix(get_cost_coeffs_base(art), 1);
+  // inizializza a 1 i coefficienti di costo in base per gli
+  // indici delle variabili artificiali
+
+  for (i = 1; i <= num_constraints; i++)
+    if (get_base_index(art, i) > num_variable_original_problem)
+      set_cost_coeffs_base_index(art, i, 1);
+    else set_cost_coeffs_base_index(art, i, 0);
 
   art->x_base_value = build_x_base_value(art);
   art->z_value = build_z_value_by_base(art);
@@ -523,8 +529,42 @@ int* get_identity_columns_in_tech_coeffs(simp s) { return s->identity_columns_in
 int get_num_identity_columns_in_tech_coeffs(simp s) { return s->num_identity_columns_in_tech_coeffs; }
 matrix get_base(simp s) { return s->base; }
 matrix get_cost_coeffs_base(simp s) { return s->cost_coeffs_base; }
+matrix get_shadow_prices(simp s) { return s->shadow_prices; }
 matrix get_x_base_value(simp s) { return s->x_base_value; }
 float get_z_value(simp s) { return s->z_value; }
+
+// calcoola prezzi ombra come prodotto tra il vettore dei coefficienti di
+// costo in base e la matrice di base inversa
+matrix build_shadow_prices(simp s) {
+  matrix res, cbt = transpose(get_cost_coeffs_base(s)),
+    inv = inverse(get_base(s));
+
+  res = row_by_column_multiplication(cbt, inv);
+
+  destroy_matrix(cbt);
+  destroy_matrix(inv);
+
+  return res;
+}
+
+const int get_cost_coeffs_base_index(simp s, const int i) {
+  if (i <= 0 || i > get_num_constraints(s)) {
+    fprintf(stderr, "error getting cost coeff base at index %d of a problem with %d constraints", i, get_num_constraints(s));
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+  return get_matrix_element(get_cost_coeffs_base(s), i, 1);
+}
+
+void set_cost_coeffs_base_index(simp s, const int i, const int value) {
+  if (i <= 0 || i > get_num_constraints(s)) {
+    fprintf(stderr, "error setting cost coeff base at index %d to value %d of a problem with %d constraints",
+      i, value, get_num_constraints(s));
+    clean_all(s);
+    exit(EXIT_FAILURE);
+  }
+  set_matrix_element(get_cost_coeffs_base(s), i, 1, value);
+}
 
 const int get_base_index(simp s, const int i) {
   if (i <= 0 || i > get_num_constraints(s)) {
@@ -579,6 +619,7 @@ void print_general_info(simp s) {
   print_out_base_indices(s);
   print_base(s);
   print_cost_coeffs_base(s);
+  // print_shadow_prices(s);
   print_solution_info(s);
   printf("\n\n---------------------------------------------------------------\n\n");
 }
@@ -602,6 +643,7 @@ void print_cost_coeffs_base(simp s) { print_matrix_by_info(get_cost_coeffs_base(
 void print_tech_coeffs(simp s) { print_matrix_by_info(get_tech_coeffs(s), "tech coeffs"); }
 void print_base(simp s) { print_matrix_by_info(get_base(s), "base matrix"); }
 void print_x_base_value(simp s) { print_matrix_by_info(get_x_base_value(s), "x base value"); }
+void print_shadow_prices(simp s) { print_matrix_by_info(get_shadow_prices(s), "shadow prices"); }
 void print_z_value(simp s) { printf("\nz min value: %.1f\n", get_z_value(s)); }
 void print_solution_info(simp s) { print_x_base_value(s); print_z_value(s); }
 
@@ -844,6 +886,7 @@ void clean_all(simp s) {
   clean_ptr((void**) &s->cost_coeffs);
   clean_ptr((void**) &s->tech_coeffs);
   clean_ptr((void**) &s->known_terms);
+  clean_ptr((void**) &s->shadow_prices);
   clean_ptr((void**) &s->identity_columns_in_tech_coeffs);
   clean_base_related(s);
 
